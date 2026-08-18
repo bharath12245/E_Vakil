@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Send, ArrowLeft, Menu } from "lucide-react";
+import { Send, ArrowLeft, Menu, LogOut } from "lucide-react";
 import { ChatPanel, type Message } from "@/components/ChatPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { useChatStorage } from "@/hooks/useChatStorage";
@@ -8,11 +8,25 @@ import { VoiceInput } from "@/components/VoiceInput";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { generateLegalResponse } from "@/lib/gemini";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export const CaseAnalysis = () => {
   const navigate = useNavigate();
   const { t, lang } = useLanguage();
+  const { user, isLoading: isAuthLoading, logout } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthLoading && !user) {
+      navigate("/auth");
+    }
+  }, [user, isAuthLoading, navigate]);
+
+  const handleLogout = async () => {
+    logout();
+    navigate("/");
+  };
 
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,7 +34,7 @@ export const CaseAnalysis = () => {
 
   // ── Session Management ──
   const {
-    sessions, currentSessionId, isTemporary,
+    sessions, currentSessionId, isTemporary, isLoaded,
     createSession, updateCurrentSession, loadSession, deleteSession, toggleTemporary
   } = useChatStorage();
 
@@ -29,6 +43,8 @@ export const CaseAnalysis = () => {
 
   // Initialize first session automatically if needed
   useEffect(() => {
+    if (!isLoaded) return; // Wait for Supabase to finish fetching!
+
     if (!currentSessionId && sessions.length === 0 && !isTemporary) {
       createSession();
     } else if (!currentSessionId && sessions.length > 0 && !isTemporary) {
@@ -36,7 +52,7 @@ export const CaseAnalysis = () => {
     } else if (!currentSessionId && isTemporary) {
       // It handles itself
     }
-  }, [sessions, currentSessionId, isTemporary, createSession, loadSession]);
+  }, [sessions, currentSessionId, isTemporary, isLoaded, createSession, loadSession]);
 
 
   const simulateAIResponse = async (currentMsgs: Message[], userInput: string) => {
@@ -119,6 +135,15 @@ export const CaseAnalysis = () => {
           </div>
           <div className="flex items-center gap-4 pointer-events-auto">
             <LanguageSwitcher />
+
+            <button
+              onClick={handleLogout}
+              className="px-4 py-1.5 rounded-full border border-destructive/20 hover:bg-destructive/10 flex items-center gap-2 transition-all bg-[#0a0a0a]/80 backdrop-blur-md shadow-lg group"
+            >
+              <LogOut className="w-3.5 h-3.5 text-destructive/70 group-hover:text-destructive" />
+              <span className="font-sans text-[11px] font-medium tracking-widest text-destructive/70 group-hover:text-destructive uppercase">Exit Secure Vault</span>
+            </button>
+
             <div className="flex items-center gap-2 px-4 py-1.5 bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
               <span className={`w-2 h-2 rounded-full ${isLoading ? "bg-gold animate-bounce shadow-[0_0_10px_hsl(var(--gold))]" : "bg-primary animate-pulse shadow-[0_0_10px_hsl(var(--primary))]"}`} />
               <span className="font-sans text-[11px] font-medium tracking-widest text-primary uppercase">{isLoading ? "Thinking..." : t.aiActive}</span>

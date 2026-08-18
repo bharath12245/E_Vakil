@@ -3,6 +3,7 @@ import { ArrowRight, Shield, Cpu, BookOpen, Sparkles } from "lucide-react";
 import heroBg from "@/assets/hero-bg.jpg";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useAuth } from "@/contexts/AuthContext";
 
 const AbstractAICore = () => (
   <svg
@@ -72,6 +73,15 @@ const FeaturePill = ({ icon, text }: { icon: React.ReactNode; text: string }) =>
 export const LandingPage = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { user } = useAuth();
+
+  const handleStart = () => {
+    if (user) {
+      navigate("/analyze");
+    } else {
+      navigate("/auth");
+    }
+  };
 
   const domains = [
     { icon: "⚖", title: t.domainMVATitle, description: t.domainMVADesc },
@@ -103,7 +113,7 @@ export const LandingPage = () => {
           <div className="flex items-center gap-4">
             <LanguageSwitcher />
             <button
-              onClick={() => navigate("/analyze")}
+              onClick={handleStart}
               className="font-sans text-xs font-semibold bg-white text-black px-5 py-2.5 rounded-full hover:scale-105 transition-transform shadow-[0_0_20px_rgba(255,255,255,0.1)]"
             >
               {t.navStartAnalysis}
@@ -148,7 +158,7 @@ export const LandingPage = () => {
 
             <div className="flex items-center gap-6 animate-slide-up pt-4" style={{ animationDelay: "0.4s" }}>
               <button
-                onClick={() => navigate("/analyze")}
+                onClick={handleStart}
                 className="group flex items-center gap-3 font-sans font-semibold text-sm bg-primary text-primary-foreground px-8 py-4 rounded-full hover:bg-white hover:text-black transition-all duration-300 shadow-[0_0_30px_hsl(var(--primary)/0.3)]"
               >
                 {t.heroCta}
@@ -180,7 +190,7 @@ export const LandingPage = () => {
         </div>
         <div className="grid md:grid-cols-3 gap-6">
           {domains.map((d, i) => (
-            <DomainCard key={d.title} {...d} delay={i * 0.12} onClick={() => navigate("/analyze")} exploreTxt={t.domainExplore} />
+            <DomainCard key={d.title} {...d} delay={i * 0.12} onClick={handleStart} exploreTxt={t.domainExplore} />
           ))}
         </div>
       </section>

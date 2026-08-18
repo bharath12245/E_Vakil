@@ -74,7 +74,7 @@ export const ChatPanel = ({ messages, isLoading, emptyTitle = "Describe your leg
             >
               {msg.content}
               <div className={`text-[10px] mt-2 ${msg.role === "user" ? "text-primary/70 text-right" : "text-white/30 text-left"}`}>
-                {msg.timestamp.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                {new Date(msg.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
               </div>
             </div>
             

@@ -1,35 +1,83 @@
 import { useState, useEffect } from "react";
-import { Message } from "@/components/ChatPanel";
-import { LegalSection } from "@/components/LegalOutputPanel";
+import { type Message } from "@/components/ChatPanel";
+import { type LegalSection } from "@/components/LegalOutputPanel";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface ChatSession {
   id: string;
   title: string;
-  createdAt: string; // ISO string to map to Date easily
+  createdAt: string; 
   messages: Message[];
-  sections: LegalSection[]; // Accumulated sections if any
+  sections: LegalSection[]; 
 }
 
 export function useChatStorage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isTemporary, setIsTemporary] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  
+  // Securely pull in global auth state
+  const { user, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
-    const saved = localStorage.getItem("evakil_chats");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setSessions(parsed);
-      } catch (e) {
-        console.error("Failed to parse chat storage", e);
-      }
-    }
-  }, []);
+    // Hold fetching sequence until the Auth engine fully boots
+    if (authLoading) return;
 
-  const saveSessions = (newSessions: ChatSession[]) => {
+    if (!user) {
+      setSessions([]);
+      setIsLoaded(true);
+      return;
+    }
+
+    // Initial fetch from Supabase Cloud specifically for this user
+    const fetchSessions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('sessions')
+          .select('*')
+          .eq('user_id', user.id) // Restricts query to authenticated profile ONLY
+          .order('created_at', { ascending: true });
+          
+        if (!error && data) {
+          const mappedSessions: ChatSession[] = data.map(d => ({
+            id: d.id,
+            title: d.title,
+            createdAt: d.created_at,
+            messages: d.messages || [],
+            sections: d.sections || [],
+          }));
+          setSessions(mappedSessions);
+        } else if (error) {
+          console.error("Supabase fetch error:", error);
+        }
+      } finally {
+        setIsLoaded(true); // Flag that DB has responded
+      }
+    };
+    
+    fetchSessions();
+  }, [user, authLoading]);
+
+  const saveSessions = async (newSessions: ChatSession[], syncTarget?: ChatSession) => {
     setSessions(newSessions);
-    localStorage.setItem("evakil_chats", JSON.stringify(newSessions));
+    
+    // Safety abort if not authenticated
+    if (!user) return;
+
+    // Strictly sync current session directly to this exact user's profile
+    if (syncTarget && !isTemporary) {
+      const { error } = await supabase.from('sessions').upsert({
+        id: syncTarget.id,
+        user_id: user.id, // Secure profile identity binding
+        title: syncTarget.title,
+        messages: syncTarget.messages,
+        sections: syncTarget.sections,
+        created_at: syncTarget.createdAt
+      });
+      if (error) console.error("Supabase upsert error:", error);
+    }
   };
 
   const createSession = () => {
@@ -42,7 +90,7 @@ export function useChatStorage() {
         messages: [],
         sections: [],
       };
-      saveSessions([...sessions, emptySession]);
+      saveSessions([...sessions, emptySession], emptySession);
     }
     setCurrentSessionId(newId);
     return newId;
@@ -51,9 +99,9 @@ export function useChatStorage() {
   const updateCurrentSession = (messages: Message[], sections: LegalSection[] = []) => {
     if (isTemporary || !currentSessionId) return;
 
+    let targetSession: ChatSession | null = null;
     const newSessions = sessions.map((s) => {
       if (s.id === currentSessionId) {
-        // Generate a title based on the first user message if it's currently "New Chat"
         let title = s.title;
         if (title === "New Chat" && messages.length > 0) {
           const firstUserMsg = messages.find((m) => m.role === "user");
@@ -61,11 +109,15 @@ export function useChatStorage() {
             title = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
           }
         }
-        return { ...s, title, messages, sections };
+        targetSession = { ...s, title, messages, sections };
+        return targetSession;
       }
       return s;
     });
-    saveSessions(newSessions);
+    
+    if (targetSession) {
+      saveSessions(newSessions, targetSession);
+    }
   };
 
   const loadSession = (id: string) => {
@@ -73,24 +125,25 @@ export function useChatStorage() {
     setIsTemporary(false);
   };
 
-  const deleteSession = (id: string) => {
+  const deleteSession = async (id: string) => {
     const newSessions = sessions.filter((s) => s.id !== id);
-    saveSessions(newSessions);
+    setSessions(newSessions);
     if (currentSessionId === id) {
       setCurrentSessionId(null);
     }
+    if (user) await supabase.from('sessions').delete().eq('id', id).eq('user_id', user.id);
   };
 
-  const clearHistory = () => {
-    saveSessions([]);
+  const clearHistory = async () => {
+    setSessions([]);
     setCurrentSessionId(null);
+    if (user) await supabase.from('sessions').delete().eq('user_id', user.id);
   };
 
   const toggleTemporary = () => {
     setIsTemporary((prev) => {
       const next = !prev;
       if (next) {
-        // Switching to temporary chat removes active link to persistent session
         setCurrentSessionId(null);
       } else {
         createSession();
@@ -103,6 +156,7 @@ export function useChatStorage() {
     sessions,
     currentSessionId,
     isTemporary,
+    isLoaded,
     createSession,
     updateCurrentSession,
     loadSession,
